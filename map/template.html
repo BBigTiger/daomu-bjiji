@@ -49,6 +49,7 @@
   <div class="sub">吴邪行动路线 / 时间线 / 人物 / 发现物 全标注 ｜ 数据源：正传八部 + 藏海花·沙海·重启</div>
 
   <h2>📅 时间线（点击跳转定位）</h2>
+  <input id="tlSearch" type="text" placeholder="🔍 搜索事件/人物/地点… 例：夜闯、鬼玺、青铜门" style="width:100%;box-sizing:border-box;padding:6px 8px;border-radius:6px;border:1px solid #333b52;background:#262c40;color:#e8e6df;font-size:12px;margin-bottom:6px;">
   <div id="timelineList"></div>
 
   <h2>📌 地点筛选</h2>
@@ -238,13 +239,15 @@ function findLocFor(t) {
   return null;
 }
 const tlList = document.getElementById('timelineList');
+const tlSearch = document.getElementById('tlSearch');
+const tlItems = [];
 (D.timeline || []).forEach(t => {
   const item = document.createElement('div');
   item.className = 'tl-item';
   item.dataset.tid = t.id;
   item.innerHTML = `<span class="tl-date">${t.date}</span> <span class="tl-era">${t.era || ''}</span><br>${t.event}`;
   item.addEventListener('click', () => {
-    [...tlList.children].forEach(c => c.classList.remove('active'));
+    [...tlItems].forEach(c => c.classList.remove('active'));
     item.classList.add('active');
     const loc = findLocFor(t);
     if (loc) {
@@ -264,7 +267,17 @@ const tlList = document.getElementById('timelineList');
         `<div class="row" style="color:#888">${t.volume || ''}${t.chapter_hint ? ' · ' + t.chapter_hint : ''}</div>`;
     }
   });
+  tlItems.push(item);
   tlList.appendChild(item);
+});
+// 时间线搜索过滤：匹配 事件/人物/地点/发现物
+tlSearch.addEventListener('input', () => {
+  const kw = tlSearch.value.trim().toLowerCase();
+  tlItems.forEach((item, i) => {
+    const t = D.timeline[i];
+    const hay = [t.event, t.era, t.volume, ...(t.location||[]), ...(t.people||[]), ...(t.finds||[])].join(' ').toLowerCase();
+    item.style.display = (!kw || hay.includes(kw)) ? '' : 'none';
+  });
 });
 
 // ================= 筛选 UI =================
