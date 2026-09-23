@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>《盗墓笔记》全地点编年史地图</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  html, body { margin:0; padding:0; height:100%; font-family:"Microsoft YaHei", sans-serif; }
+  #map { height:100%; width:100%; }
+  #sidebar {
+    position:fixed; top:10px; left:10px; z-index:1000;
+    width:330px; max-height:calc(100% - 20px); overflow-y:auto;
+    background:rgba(20,24,36,0.94); color:#e8e6df; border-radius:10px;
+    padding:14px 16px; box-shadow:0 4px 18px rgba(0,0,0,.5);
+    font-size:13px; line-height:1.6;
+  }
+  #sidebar h1 { font-size:17px; margin:0 0 4px; color:#f0c860; }
+  #sidebar .sub { color:#9aa3b5; font-size:12px; margin-bottom:10px; }
+  #sidebar h2 { font-size:14px; margin:14px 0 6px; color:#c9d4e8; border-bottom:1px solid #3a4156; padding-bottom:3px; }
+  #filters label { display:block; margin:3px 0; cursor:pointer; }
+  #filters input { margin-right:6px; }
+  .legend-dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:6px; vertical-align:middle; }
+  #detail { display:none; margin-top:10px; background:#262c40; border-radius:8px; padding:10px 12px; }
+  #detail h3 { margin:0 0 6px; color:#f0c860; font-size:15px; }
+  #detail .row { margin:2px 0; }
+  #detail .tag { display:inline-block; background:#3a4156; border-radius:10px; padding:1px 8px; margin:2px 4px 2px 0; font-size:11px; }
+  #stats { font-size:11px; color:#9aa3b5; margin-top:10px; }
+  #basetip { font-size:11px; color:#8f9bb3; margin-top:8px; word-break:break-all; }
+  .leaflet-popup-content { font-size:13px; max-height:240px; overflow-y:auto; }
+  .leaflet-popup-content h4 { margin:0 0 4px; color:#5b3a1e; }
+  /* 时间线列表 */
+  #timelineList { max-height:280px; overflow-y:auto; margin-top:6px; border:1px solid #333b52; border-radius:6px; padding:4px; }
+  .tl-item { cursor:pointer; padding:5px 8px; border-radius:5px; margin:2px 0; border-left:3px solid #3a4156; font-size:12px; }
+  .tl-item:hover { background:#2b3147; }
+  .tl-item.active { background:#3d465f; border-left-color:#f0c860; }
+  .tl-date { color:#f0c860; font-weight:bold; }
+  .tl-era { color:#9aa3b5; font-size:11px; }
+  /* 路线箭头 */
+  .route-arrow { text-shadow:0 0 3px #fff, 0 0 3px #fff; }
+  @media (max-width:720px){ #sidebar { width:auto; right:10px; } }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div id="sidebar">
+  <h1>🗺️ 盗墓笔记 · 全地点编年史地图</h1>
+  <div class="sub">吴邪行动路线 / 时间线 / 人物 / 发现物 全标注 ｜ 数据源：正传八部 + 藏海花·沙海·重启</div>
+
+  <h2>📅 时间线（点击跳转定位）</h2>
+  <div id="timelineList"></div>
+
+  <h2>📌 地点筛选</h2>
+  <div id="filters"></div>
+
+  <h2>🗺️ 显示图层</h2>
+  <div id="layerSwitches">
+    <label><input type="checkbox" id="swLocations" checked> 全部地点</label>
+    <label><input type="checkbox" id="swRoute" checked> 吴邪行动路线（带方向箭头）</label>
+    <label><input type="checkbox" id="swLabels"> 地点名称标签</label>
+  </div>
+
+  <div id="detail"></div>
+  <div id="basetip">正在加载底图…</div>
+  <div id="stats">加载中…</div>
+</div>
+<script>
+// ---- 数据挂载点：由生成脚本填充 ----
+window.DAOMU_DATA = __DAOMU_DATA__;
+
+const map = L.map('map', { center: [33.5, 106.5], zoom: 4, preferCanvas: true });
+
+// ================= 坐标转换（WGS84 ↔ GCJ02） =================
+// 高德底图为 GCJ02 坐标系，其余（Esri/OSM）为 WGS84，切换底图时自动重算所有标注
+const GCJ_A = 6378245.0, GCJ_EE = 0.00669342162296594323;
+function tLat(x, y) {
+  let ret = -100.0 + 2.0 * x + 3.0 * y + 0.2 * y * y + 0.1 * x * y + 0.2 * Math.sqrt(Math.abs(x));
+  ret += (20.0 * Math.sin(6.0 * x * Math.PI) + 20.0 * Math.sin(2.0 * x * Math.PI)) * 2.0 / 3.0;
+  ret += (20.0 * Math.sin(y * Math.PI) + 40.0 * Math.sin(y / 3.0 * Math.PI)) * 2.0 / 3.0;
+  ret += (160.0 * Math.sin(y / 12.0 * Math.PI) + 320 * Math.sin(y * Math.PI / 30.0)) * 2.0 / 3.0;
+  return ret;
+}
+function tLng(x, y) {
+  let ret = 300.0 + x + 2.0 * y + 0.1 * x * x + 0.1 * x * y + 0.1 * Math.sqrt(Math.abs(x));
+  ret += (20.0 * Math.sin(6.0 * x * Math.PI) + 20.0 * Math.sin(2.0 * x * Math.PI)) * 2.0 / 3.0;
+  ret += (20.0 * Math.sin(x * Math.PI) + 40.0 * Math.sin(x / 3.0 * Math.PI)) * 2.0 / 3.0;
+  ret += (150.0 * Math.sin(x / 12.0 * Math.PI) + 300.0 * Math.sin(x / 30.0 * Math.PI)) * 2.0 / 3.0;
+  return ret;
+}
+function wgs2gcj(lat, lng) {
+  let dLat = tLat(lng - 105.0, lat - 35.0);
+  let dLng = tLng(lng - 105.0, lat - 35.0);
+  const radLat = lat / 180.0 * Math.PI;
+  let magic = Math.sin(radLat);
+  magic = 1 - GCJ_EE * magic * magic;
+  const sqrtMagic = Math.sqrt(magic);
+  dLat = (dLat * 180.0) / ((GCJ_A * (1 - GCJ_EE)) / (magic * sqrtMagic) * Math.PI);
+  dLng = (dLng * 180.0) / (GCJ_A / sqrtMagic * Math.cos(radLat) * Math.PI);
+  return [lat + dLat, lng + dLng];
+}
+let coordMode = 'gcj02'; // 当前底图坐标系
+function toDisp(lat, lng) {
+  return coordMode === 'gcj02' ? wgs2gcj(lat, lng) : [lat, lng];
+}
+
+// ================= 底图（多源，中文优先，自动容错） =================
+const baseLayers = {
+  '🗺️ 高德街道图（中文）': L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', { subdomains: '1234', maxZoom: 18, attribution: '© 高德地图' }),
+  '🛰️ 高德卫星图（中文）': L.tileLayer('https://webst0{s}.is.autonavi.com/appmaptile?style=6&x={x}&y={y}&z={z}', { subdomains: '1234', maxZoom: 18, attribution: '© 高德地图' }),
+  '🌏 Esri 地形街道（英文）': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', { maxZoom: 18, attribution: '© Esri' }),
+  '🧭 OSM（英文）': L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18, attribution: '© OpenStreetMap' })
+};
+const autoOrder = ['🗺️ 高德街道图（中文）', '🌏 Esri 地形街道（英文）', '🧭 OSM（英文）'];
+let currentBaseKey = null;
+
+function setMode(key) {
+  coordMode = (key || '').includes('高德') ? 'gcj02' : 'wgs84';
+  applyGeometry();
+}
+function applyGeometry() {
+  if (!markers.length) return;
+  markers.forEach(m => m.setLatLng(toDisp(m._raw[0], m._raw[1])));
+  renderRoute();
+}
+
+function startBase() {
+  let i = 0;
+  const tryNext = () => {
+    if (i >= autoOrder.length) {
+      document.getElementById('basetip').textContent = '⚠️ 所有底图加载失败，请检查网络；仍可用右上角控件手动切换';
+      return;
+    }
+    const key = autoOrder[i];
+    const layer = baseLayers[key];
+    layer.once('tileload', () => {
+      currentBaseKey = key;
+      setMode(key);
+      document.getElementById('basetip').textContent = '底图：' + key.replace(/^[^\u4e00-\u9fa5A-Za-z]+/, '') + '（右上角可切换）';
+    });
+    layer.once('tileerror', () => {
+      if (map.hasLayer(layer)) map.removeLayer(layer);
+      i++;
+      tryNext();
+    });
+    currentBaseKey = key;
+    setMode(key);
+    map.addLayer(layer);
+  };
+  tryNext();
+}
+
+const D = window.DAOMU_DATA;
+const icons = {};
+function iconFor(type) {
+  const colors = {
+    '古墓/遗址':'#c0392b','石墓/陵寝':'#8e44ad','城市/地点':'#2980b9','山峰/山口':'#16a085',
+    '海域':'#1f78b4','遗迹/建筑':'#b7950b','古宅/街巷':'#7f8c8d','沙漠':'#d35400',
+    '宗教/寺院':'#2c3e50','虚构锚点':'#95a5a6','其他':'#7f8c8d'
+  };
+  return colors[type] || '#7f8c8d';
+}
+
+// 去重：同一坐标地名合并弹窗内容
+if (!D.locations) D.locations = [];
+const locGroups = new Map();
+D.locations.forEach(L => {
+  const key = Math.round(L.lat*100)/100 + ',' + Math.round(L.lng*100)/100;
+  if (!locGroups.has(key)) locGroups.set(key, []);
+  locGroups.get(key).push(L);
+});
+
+const markers = [];
+locGroups.forEach((group, key) => {
+  const first = group[0];
+  const popup = document.createElement('div');
+  let html = '';
+  group.forEach(loc => {
+    html += `<h4>📍 ${loc.name}</h4>`;
+    if (loc.type) html += `<div><b>类型：</b>${loc.type}</div>`;
+    if (loc.first_seen) html += `<div><b>首次出现：</b>${loc.first_seen}</div>`;
+    if (loc.people && loc.people.length) html += `<div><b>人物：</b>${loc.people.join('、')}</div>`;
+    if (loc.finds && loc.finds.length) html += `<div><b>发现：</b>${loc.finds.join('、')}</div>`;
+    if (loc.desc) html += `<div>${loc.desc}</div>`;
+    if (loc.coords_note) html += `<div style="color:#888">※ ${loc.coords_note}</div>`;
+    html += `<hr style="border:none;border-top:1px dashed #ccc">`;
+  });
+  popup.innerHTML = html;
+  const raw = [first.lat, first.lng];
+  const m = L.circleMarker(toDisp(raw[0], raw[1]), {
+    radius: group.length > 1 ? 9 : 7,
+    color:'#fff', weight:1.5, fillColor: iconFor(first.type), fillOpacity:0.85
+  }).bindPopup(popup);
+  if (first.labelOn !== false) m.bindTooltip(group.map(g=>g.name).join('<br>'), {direction:'top'});
+  m._raw = raw;
+  m._group = group;
+  markers.push(m);
+});
+
+const locLayer = L.layerGroup(markers).addTo(map);
+
+// ================= 路线（带方向箭头） =================
+let routeLayer = L.layerGroup();
+function renderRoute() {
+  routeLayer.clearLayers();
+  if (!D.route || !D.route.length) return;
+  const pts = D.route.map(r => toDisp(r.lat, r.lng));
+  L.polyline(pts, { color:'#e74c3c', weight:3, dashArray:'6,6', opacity:0.9 })
+    .bindTooltip('吴邪行动主要路线（示意，非精确路径）').addTo(routeLayer);
+  // 每个线段中点加方向箭头
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i], b = pts[i + 1];
+    const mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+    const ang = Math.atan2(b[1] - a[1], b[0] - a[0]) * 180 / Math.PI;
+    L.marker(mid, {
+      icon: L.divIcon({
+        className: 'route-arrow',
+        html: `<div style="transform:rotate(${ang}deg);font-size:16px;line-height:1;color:#e74c3c;text-shadow:0 0 3px #fff,0 0 3px #fff;">➤</div>`,
+        iconSize: [16, 16], iconAnchor: [8, 8]
+      })
+    }).addTo(routeLayer);
+  }
+  D.route.forEach(r => {
+    if (r.note) L.circleMarker(toDisp(r.lat, r.lng), { radius:3, color:'#e74c3c', fillColor:'#e74c3c', fillOpacity:1 }).bindTooltip(r.note).addTo(routeLayer);
+  });
+}
+renderRoute();
+routeLayer.addTo(map);
+
+// ================= 时间线面板 =================
+function findLocFor(t) {
+  const locs = t.location || [];
+  for (const ls of locs) {
+    for (const loc of D.locations) {
+      if (loc.name.includes(ls) || ls.includes(loc.name)) return loc;
+    }
+  }
+  return null;
+}
+const tlList = document.getElementById('timelineList');
+(D.timeline || []).forEach(t => {
+  const item = document.createElement('div');
+  item.className = 'tl-item';
+  item.dataset.tid = t.id;
+  item.innerHTML = `<span class="tl-date">${t.date}</span> <span class="tl-era">${t.era || ''}</span><br>${t.event}`;
+  item.addEventListener('click', () => {
+    [...tlList.children].forEach(c => c.classList.remove('active'));
+    item.classList.add('active');
+    const loc = findLocFor(t);
+    if (loc) {
+      const disp = toDisp(loc.lat, loc.lng);
+      map.flyTo(disp, Math.max(map.getZoom(), 9), { duration: 0.8 });
+      setTimeout(() => {
+        const m = markers.find(mk => mk._group.some(g => g.id === loc.id));
+        if (m) m.openPopup();
+      }, 850);
+    } else {
+      document.getElementById('detail').style.display = 'block';
+      const dt = document.getElementById('detail');
+      dt.innerHTML = `<h3>📅 ${t.date} · ${t.era || ''}</h3>` +
+        `<div class="row">${t.event}</div>` +
+        (t.people && t.people.length ? `<div class="row"><b>人物：</b>${t.people.map(p=>`<span class="tag">${p}</span>`).join('')}</div>` : '') +
+        (t.finds && t.finds.length ? `<div class="row"><b>发现：</b>${t.finds.map(f=>`<span class="tag">${f}</span>`).join('')}</div>` : '') +
+        `<div class="row" style="color:#888">${t.volume || ''}${t.chapter_hint ? ' · ' + t.chapter_hint : ''}</div>`;
+    }
+  });
+  tlList.appendChild(item);
+});
+
+// ================= 筛选 UI =================
+const filterEl = document.getElementById('filters');
+function rebuildFilters() {
+  const types = [...new Set(D.locations.map(l=>l.type).filter(Boolean))];
+  filterEl.innerHTML = types.map(t =>
+    `<label><input type="checkbox" class="ftype" value="${t}" checked> <span class="legend-dot" style="background:${iconFor(t)}"></span>${t}（${D.locations.filter(l=>l.type===t).length}）</label>`).join('');
+}
+function applyFilters() {
+  const active = [...document.querySelectorAll('.ftype:checked')].map(i=>i.value);
+  markers.forEach(m => {
+    const any = m._group.some(l => !l.type || active.includes(l.type));
+    if (any) { if (!locLayer.hasLayer(m)) locLayer.addLayer(m); }
+    else if (locLayer.hasLayer(m)) locLayer.removeLayer(m);
+  });
+}
+rebuildFilters();
+document.getElementById('filters').addEventListener('change', applyFilters);
+
+// 图层开关
+document.getElementById('swLocations').addEventListener('change', e => { e.target.checked ? map.addLayer(locLayer) : map.removeLayer(locLayer); });
+document.getElementById('swRoute').addEventListener('change', e => { e.target.checked ? map.addLayer(routeLayer) : map.removeLayer(routeLayer); });
+document.getElementById('swLabels').addEventListener('change', e => {
+  markers.forEach(m => { m.unbindTooltip(); if (e.target.checked && m._group[0].labelOn !== false) m.bindTooltip(m._group.map(g=>g.name).join('<br>'),{direction:'top',permanent:true}); });
+});
+
+// 底图切换：更新坐标系并重算几何
+map.on('baselayerchange', e => {
+  const key = Object.keys(baseLayers).find(k => baseLayers[k] === e.layer);
+  if (key) {
+    currentBaseKey = key;
+    setMode(key);
+    document.getElementById('basetip').textContent = '底图：' + key.replace(/^[^\u4e00-\u9fa5A-Za-z]+/, '');
+  }
+});
+L.control.layers(baseLayers, null, { position: 'topright', collapsed: false }).addTo(map);
+
+// 统计
+document.getElementById('stats').textContent =
+  `共收录 ${D.locations.length} 个地点 · ${D.people ? D.people.length : 0} 位人物 · ${D.timeline ? D.timeline.length : 0} 条时间线事件 · ${D.route ? D.route.length : 0} 段路线` +
+  (D.note ? ` ｜ ${D.note}` : '');
+
+// 点击地图空白处关闭详情
+map.on('click', () => { document.getElementById('detail').style.display='none'; });
+
+// 启动底图加载（放在最后，几何已就绪）
+startBase();
+</script>
+</body>
+</html>

@@ -1,0 +1,17 @@
+# Node
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# 临时/缓存
+*.tmp
+*.bak
+Thumbs.db
+.DS_Store
+
+# 编辑器
+.vscode/
+.idea/
+
+# 本地构建产物（可重新生成，按需保留）
+# map/data.js 由 build_data.mjs 生成
