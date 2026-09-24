@@ -33,10 +33,20 @@ const route = fs.existsSync(path.join(__dirname, 'data_route_raw.js'))
   ? (await importJs('data_route_raw.js')).route
   : [];
 
+// ---- 谜题线 ----
+const mysteries = fs.existsSync(path.join(__dirname, 'data_mysteries_raw.js'))
+  ? (await importJs('data_mysteries_raw.js')).mysteries
+  : [];
+
+// ---- 人物轨迹 ----
+const trajectories = fs.existsSync(path.join(__dirname, 'data_trajectories_raw.js'))
+  ? (await importJs('data_trajectories_raw.js')).trajectories
+  : {};
+
 // ---- 输出 ----
 const out = {
   note: '《盗墓笔记》编年史数据 · 由 DeepSeek 多子代理考据整理，坐标含虚构锚点标注；非官方文本',
-  timeline, locations, people, finds, route,
+  timeline, locations, people, finds, route, mysteries, trajectories,
 };
 
 const dataJs = `window.DAOMU_DATA = ${JSON.stringify(out)};`;
@@ -47,6 +57,8 @@ fs.writeFileSync(path.join(__dirname, 'locations.json'), JSON.stringify(location
 fs.writeFileSync(path.join(__dirname, 'timeline.json'), JSON.stringify(timeline, null, 2), 'utf8');
 fs.writeFileSync(path.join(__dirname, 'characters.json'), JSON.stringify(people, null, 2), 'utf8');
 fs.writeFileSync(path.join(__dirname, 'finds.json'), JSON.stringify(finds, null, 2), 'utf8');
+fs.writeFileSync(path.join(__dirname, 'mysteries.json'), JSON.stringify(mysteries, null, 2), 'utf8');
+fs.writeFileSync(path.join(__dirname, 'trajectories.json'), JSON.stringify(trajectories, null, 2), 'utf8');
 
 // GeoJSON
 const geojson = {
@@ -59,4 +71,4 @@ const geojson = {
 };
 fs.writeFileSync(path.join(__dirname, 'locations.geojson'), JSON.stringify(geojson, null, 2), 'utf8');
 
-console.log('done: locations ' + locations.length + ', timeline ' + timeline.length + ', people ' + people.length + ', finds ' + finds.length + ', route ' + route.length);
+console.log('done: locations ' + locations.length + ', timeline ' + timeline.length + ', people ' + people.length + ', finds ' + finds.length + ', route ' + route.length + ', mysteries ' + mysteries.length + ', trajectories ' + Object.keys(trajectories).length);
