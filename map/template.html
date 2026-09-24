@@ -68,7 +68,7 @@
 <div id="map"></div>
 <div id="sidebar">
   <h1>🗺️ 盗墓笔记 · 全地点编年史地图</h1>
-  <div class="sub">吴邪行动路线 / 时间线 / 人物 / 发现物 全标注 ｜ 数据源：正传八部 + 藏海花·沙海·重启</div>
+  <div class="sub">吴邪行动路线 / 时间线 / 人物 / 发现物 全标注 ｜ 数据源：正传八部 + 藏海花·沙海·重启 + 老九门前传</div>
 
   <div style="margin:8px 0;">
     <button class="mode-btn active" id="modeMap" onclick="switchMode('map')">🗺️ 地图</button>
@@ -76,10 +76,18 @@
     <button class="mode-btn" id="modeMystery" onclick="switchMode('mystery')">🔍 谜题线</button>
     <button class="mode-btn" id="modeStory" onclick="switchMode('story')">📖 编年史</button>
     <button class="mode-btn" id="modeGraph" onclick="switchMode('graph')">🕸️ 关系图谱</button>
+    <button class="mode-btn" id="modeGenealogy" onclick="switchMode('genealogy')">🏛️ 九门谱系</button>
   </div>
 
   <!-- 地图模式内容 -->
   <div id="mapMode">
+  <h2>🕰️ 时代层</h2>
+  <div id="eraSwitches">
+    <label><input type="checkbox" class="era" value="modern" checked> <span class="legend-dot" style="background:#c9a227"></span>现代·正传与外传</label>
+    <label><input type="checkbox" class="era" value="jiemen" checked> <span class="legend-dot" style="background:#b0552e"></span>民国·老九门</label>
+    <label><input type="checkbox" class="era" value="ancient" checked> <span class="legend-dot" style="background:#6e7d8c"></span>古代·传说</label>
+  </div>
+
   <h2>📌 地点筛选</h2>
   <div id="filters"></div>
 
@@ -118,6 +126,12 @@
   <div id="graphMode" style="display:none;">
     <div class="sub">人物共同出场关系图谱（连线越粗同场越多；点击节点定位）</div>
     <div id="graphPanel"><div id="graphChart"></div></div>
+  </div>
+
+  <!-- 九门谱系模式内容 -->
+  <div id="genealogyMode" style="display:none;">
+    <div class="sub">老九门世家谱系（民国前传 → 正传跨代连线）</div>
+    <div id="genealogyPanel"></div>
   </div>
 
   <div id="detail"></div>
@@ -212,7 +226,7 @@ function startBase() {
 const D = window.DAOMU_DATA;
 
 // ================= 模式切换 =================
-const MODE_IDS = ['map','timeline','mystery','story','graph'];
+const MODE_IDS = ['map','timeline','mystery','story','graph','genealogy'];
 function switchMode(mode) {
   MODE_IDS.forEach(m => {
     document.getElementById('mode'+m[0].toUpperCase()+m.slice(1)).classList.toggle('active', m===mode);
@@ -220,6 +234,7 @@ function switchMode(mode) {
     if (modeEl) modeEl.style.display = m===mode ? '' : 'none';
   });
   if (mode==='graph') renderGraph();
+  if (mode==='genealogy') renderGenealogy();
 }
 // 供 onclick 使用（模板内联调用）
 
@@ -469,6 +484,56 @@ function renderGraph() {
   });
   graphChart.resize();
 }
+
+// ================= 九门谱系视图 =================
+const genealogyPanel = document.getElementById('genealogyPanel');
+function personById(name) {
+  return (D.people||[]).find(p => p.name===name || (p.alias||[]).includes(name));
+}
+function renderGenealogy() {
+  const g = D.genealogy || [];
+  if (!g.length) { genealogyPanel.innerHTML = '<div style="color:#888">暂无谱系数据</div>'; return; }
+  // 分组：按 from 长辈分组，每个长辈一张卡
+  const byFrom = {};
+  g.forEach(e => { (byFrom[e.from] = byFrom[e.from] || []).push(e); });
+  genealogyPanel.innerHTML = Object.keys(byFrom).map(f => {
+    const fp = personById(f);
+    const edges = byFrom[f];
+    return `<div style="margin-bottom:12px;background:#262c40;border-radius:8px;padding:10px;border-left:4px solid ${fp&&fp.affiliation&&fp.affiliation.includes('老九门')?'#b0552e':'#c9a227'}">
+      <div style="font-weight:bold;color:#f0c860">🏛️ ${f} <span style="font-size:11px;color:#9aa3b5">${fp?fp.role:''} · ${fp?fp.affiliation:''}</span></div>
+      ${edges.map(e => {
+        const tp = personById(e.to);
+        return `<div style="margin:4px 0 0 10px;font-size:12px">
+          <span style="color:#e8e6df">├─ <b>${e.to}</b></span>
+          <span style="color:#9aa3b5">（${e.relation}）</span>
+          ${tp&&tp.role?'<span class="tag" style="margin-left:4px">'+tp.role+'</span>':''}
+          <div style="color:#7d8699;font-size:11px;margin-left:14px">${e.note}</div>
+        </div>`;
+      }).join('')}
+    </div>`;
+  }).join('');
+}
+
+// ================= 时代层过滤 =================
+function locEraOf(loc) {
+  const fs = loc.first_seen || '';
+  if (fs.includes('老九门')) return 'jiemen';
+  if (fs.includes('古代') || fs.includes('战国') || fs.includes('传说')) return 'ancient';
+  return 'modern';
+}
+function applyEraFilter() {
+  const active = [...document.querySelectorAll('.era:checked')].map(i=>i.value);
+  markers.forEach(m => {
+    const era = locEraOf(m._group[0]);
+    const show = active.includes(era);
+    const inMap = locLayer.hasLayer(m);
+    if (show && !inMap) locLayer.addLayer(m);
+    else if (!show && inMap) locLayer.removeLayer(m);
+  });
+  renderRoute();
+  renderTrajectories();
+}
+document.querySelectorAll('.era').forEach(el => el.addEventListener('change', applyEraFilter));
 
 // ================= 时间线面板 =================
 function findLocFor(t) {

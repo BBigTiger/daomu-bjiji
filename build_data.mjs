@@ -43,10 +43,22 @@ const trajectories = fs.existsSync(path.join(__dirname, 'data_trajectories_raw.j
   ? (await importJs('data_trajectories_raw.js')).trajectories
   : {};
 
+// ---- 老九门世家谱系（新增，可选存在）----
+const genealogy = fs.existsSync(path.join(__dirname, 'data_genealogy_raw.js'))
+  ? (await importJs('data_genealogy_raw.js')).genealogy
+  : [];
+
+// ---- 时代层定义（现代正传 / 民国九门 / 古代传说）----
+const eras = [
+  { id: 'modern',   name: '现代·正传与外传', color: '#c9a227' },
+  { id: 'jiemen',   name: '民国·老九门',     color: '#b0552e' },
+  { id: 'ancient',  name: '古代·传说',       color: '#6e7d8c' }
+];
+
 // ---- 输出 ----
 const out = {
   note: '《盗墓笔记》编年史数据 · 由 DeepSeek 多子代理考据整理，坐标含虚构锚点标注；非官方文本',
-  timeline, locations, people, finds, route, mysteries, trajectories,
+  timeline, locations, people, finds, route, mysteries, trajectories, genealogy, eras,
 };
 
 const dataJs = `window.DAOMU_DATA = ${JSON.stringify(out)};`;
